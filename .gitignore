@@ -1,1 +1,6 @@
 .idea/
+camunda/** 
+jmx_prometheus_javaagent-0.12.0.jar 
+m2-repository/  
+mysql-connector-j-8.0.32.jar  
+postgresql-42.5.4.jar
