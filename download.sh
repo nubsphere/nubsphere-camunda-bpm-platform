@@ -1,4 +1,11 @@
 #!/bin/sh -ex
+VERSION=7.19.0
+DISTRO=tomcat
+SNAPSHOT=false
+EE=false
+JMX_PROMETHEUS_VERSION=0.12.0
+DIR=/app/build/camunda/nubsphere-camunda-bpm-platform/
+
 
 # Determine nexus URL parameters
 if [ "${EE}" = "true" ]; then
@@ -61,38 +68,38 @@ if [ -n "$MAVEN_PROXY_HOST" ] ; then
 	fi
 fi
 
-mvn dependency:get -U -B --global-settings /tmp/settings.xml \
+mvn dependency:get -U -B --global-settings ${DIR}/settings.xml \
     $PROXY \
     -DremoteRepositories="camunda-nexus::::https://artifacts.camunda.com/artifactory/${REPO}/" \
     -DgroupId="${ARTIFACT_GROUP}" -DartifactId="${ARTIFACT}" \
     -Dversion="${ARTIFACT_VERSION}" -Dpackaging="tar.gz" -Dtransitive=false
-cambpm_distro_file=$(find /m2-repository -name "${ARTIFACT}-${ARTIFACT_VERSION}.tar.gz" -print | head -n 1)
+cambpm_distro_file=$(find m2-repository -name "${ARTIFACT}-${ARTIFACT_VERSION}.tar.gz" -print | head -n 1)
 # Unpack distro to /camunda directory
-mkdir -p /camunda
+mkdir -p $DIR/camunda
 case ${DISTRO} in
-    run*) tar xzf "$cambpm_distro_file" -C /camunda;;
-    *)    tar xzf "$cambpm_distro_file" -C /camunda server --strip 2;;
+    run*) tar xzf "$cambpm_distro_file" -C $DIR/camunda;;
+    *)    tar xzf "$cambpm_distro_file" -C $DIR/camunda server --strip 2;;
 esac
-cp /tmp/camunda-${GROUP}.sh /camunda/camunda.sh
+cp ${DIR}/camunda-${GROUP}.sh $DIR/camunda/camunda.sh
 
 # download and register database drivers
-mvn dependency:get -U -B --global-settings /tmp/settings.xml \
+mvn dependency:get -U -B --global-settings ${DIR}/settings.xml \
     $PROXY \
     -DremoteRepositories="camunda-nexus::::https://artifacts.camunda.com/artifactory/${NEXUS_GROUP}/" \
     -DgroupId="org.camunda.bpm" -DartifactId="camunda-database-settings" \
     -Dversion="${ARTIFACT_VERSION}" -Dpackaging="pom" -Dtransitive=false
-cambpmdbsettings_pom_file=$(find /m2-repository -name "camunda-database-settings-${ARTIFACT_VERSION}.pom" -print | head -n 1)
+cambpmdbsettings_pom_file=$(find m2-repository -name "camunda-database-settings-${ARTIFACT_VERSION}.pom" -print | head -n 1)
 MYSQL_VERSION=$(xmlstarlet sel -t -v //_:version.mysql $cambpmdbsettings_pom_file)
 POSTGRESQL_VERSION=$(xmlstarlet sel -t -v //_:version.postgresql $cambpmdbsettings_pom_file)
 
 mvn dependency:copy -B \
     $PROXY \
     -Dartifact="com.mysql:mysql-connector-j:${MYSQL_VERSION}:jar" \
-    -DoutputDirectory=/tmp/
+    -DoutputDirectory=${DIR}/
 mvn dependency:copy -B \
     $PROXY \
     -Dartifact="org.postgresql:postgresql:${POSTGRESQL_VERSION}:jar" \
-    -DoutputDirectory=/tmp/
+    -DoutputDirectory=${DIR}/
 
 case ${DISTRO} in
     wildfly*)
@@ -100,26 +107,26 @@ case ${DISTRO} in
 batch
 embed-server --std-out=echo
 
-module add --name=com.mysql.mysql-connector-j --slot=main --resources=/tmp/mysql-connector-j-${MYSQL_VERSION}.jar --dependencies=javax.api,javax.transaction.api
+module add --name=com.mysql.mysql-connector-j --slot=main --resources=${DIR}/mysql-connector-j-${MYSQL_VERSION}.jar --dependencies=javax.api,javax.transaction.api
 /subsystem=datasources/jdbc-driver=mysql:add(driver-name="mysql",driver-module-name="com.mysql.mysql-connector-j",driver-xa-datasource-class-name=com.mysql.cj.jdbc.MysqlXADataSource)
 
-module add --name=org.postgresql.postgresql --slot=main --resources=/tmp/postgresql-${POSTGRESQL_VERSION}.jar --dependencies=javax.api,javax.transaction.api
+module add --name=org.postgresql.postgresql --slot=main --resources=${DIR}/postgresql-${POSTGRESQL_VERSION}.jar --dependencies=javax.api,javax.transaction.api
 /subsystem=datasources/jdbc-driver=postgresql:add(driver-name="postgresql",driver-module-name="org.postgresql.postgresql",driver-xa-datasource-class-name=org.postgresql.xa.PGXADataSource)
 
 run-batch
 EOF
-        /camunda/bin/jboss-cli.sh --file=batch.cli
-        rm -rf /camunda/standalone/configuration/standalone_xml_history/current/*
+        $DIR/camunda/bin/jboss-cli.sh --file=batch.cli
+        rm -rf $DIR/camunda/standalone/configuration/standalone_xml_history/current/*
         ;;
     run*)
-        cp /tmp/mysql-connector-j-${MYSQL_VERSION}.jar /camunda/configuration/userlib
-        cp /tmp/postgresql-${POSTGRESQL_VERSION}.jar /camunda/configuration/userlib
+        cp ${DIR}/mysql-connector-j-${MYSQL_VERSION}.jar $DIR/camunda/configuration/userlib
+        cp ${DIR}/postgresql-${POSTGRESQL_VERSION}.jar /camunda/configuration/userlib
         ;;
     tomcat*)
-        cp /tmp/mysql-connector-j-${MYSQL_VERSION}.jar /camunda/lib
-        cp /tmp/postgresql-${POSTGRESQL_VERSION}.jar /camunda/lib
+        cp ${DIR}/mysql-connector-j-${MYSQL_VERSION}.jar $DIR/camunda/lib
+        cp ${DIR}/postgresql-${POSTGRESQL_VERSION}.jar $DIR/camunda/lib
         # remove default CATALINA_OPTS from environment settings
-        echo "" > /camunda/bin/setenv.sh
+        echo "" > $DIR/camunda/bin/setenv.sh
         ;;
 esac
 
@@ -128,7 +135,8 @@ esac
 mvn dependency:copy -B \
     $PROXY \
     -Dartifact="io.prometheus.jmx:jmx_prometheus_javaagent:${JMX_PROMETHEUS_VERSION}:jar" \
-    -DoutputDirectory=/tmp/
+    -DoutputDirectory=${DIR}/
 
-mkdir -p /camunda/javaagent
-cp /tmp/jmx_prometheus_javaagent-${JMX_PROMETHEUS_VERSION}.jar /camunda/javaagent/jmx_prometheus_javaagent.jar
+mkdir -p $DIR/camunda/javaagent
+cp ${DIR}/jmx_prometheus_javaagent-${JMX_PROMETHEUS_VERSION}.jar $DIR/camunda/javaagent/jmx_prometheus_javaagent.jar
+
